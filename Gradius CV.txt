@@ -1,0 +1,734 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Gradius Style Game</title>
+    <style>
+        body {
+            margin: 0;
+            padding: 0;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            min-height: 100vh;
+            background: #000;
+            font-family: 'Courier New', monospace;
+            color: #0ff;
+        }
+        #gameContainer {
+            text-align: center;
+        }
+        canvas {
+            border: 2px solid #0ff;
+            background: linear-gradient(to bottom, #000 0%, #001 50%, #002 100%);
+            display: block;
+            margin: 20px auto;
+        }
+        #ui {
+            font-size: 18px;
+            margin-bottom: 10px;
+        }
+        #startScreen, #gameOverScreen, #winScreen, #menuScreen {
+            position: absolute;
+            top: 50%;
+            left: 50%;
+            transform: translate(-50%, -50%);
+            background: rgba(0, 20, 40, 0.95);
+            padding: 40px;
+            border: 3px solid #0ff;
+            text-align: center;
+            z-index: 10;
+        }
+        .hidden {
+            display: none;
+        }
+        button {
+            background: #000;
+            color: #0ff;
+            border: 2px solid #0ff;
+            padding: 10px 30px;
+            font-size: 18px;
+            cursor: pointer;
+            font-family: 'Courier New', monospace;
+            margin: 10px;
+        }
+        button:hover {
+            background: #0ff;
+            color: #000;
+        }
+        .controls {
+            margin: 20px 0;
+            line-height: 1.8;
+        }
+        h1 {
+            font-size: 36px;
+            margin-bottom: 20px;
+            color: #0ff;
+        }
+        h2 {
+            font-size: 24px;
+            margin: 20px 0;
+        }
+    </style>
+</head>
+<body>
+    <div id="gameContainer">
+        <div id="startScreen">
+            <h1>GRADIUS STYLE</h1>
+            <div class="controls">
+                <strong>CONTRÔLES:</strong><br>
+                Z - Haut<br>
+                S - Bas<br>
+                (Tir automatique)
+            </div>
+            <div style="margin-top: 20px; font-size: 14px;">
+                <strong>OBJECTIF:</strong> 1000 points pour gagner!<br><br>
+                <strong>BONUS:</strong><br>
+                Tir Triple (cyan) - 1 fois maximum<br>
+                Cadence++ (jaune) - 3 fois maximum
+            </div>
+            <button onclick="startGame()">COMMENCER</button>
+            <button onclick="showCV()">CV</button>
+        </div>
+        
+        <div id="gameOverScreen" class="hidden">
+            <h1>GAME OVER</h1>
+            <h2 id="finalScore"></h2>
+            <button onclick="showMenu()">MENU</button>
+            <button onclick="restartGame()">REJOUER</button>
+        </div>
+        
+        <div id="winScreen" class="hidden">
+            <h1>VICTOIRE!</h1>
+            <h2>Vous avez atteint 1000 points!</h2>
+            <h2 id="winLevel"></h2>
+            <button onclick="showMenu()">MENU</button>
+            <button onclick="restartGame()">REJOUER</button>
+        </div>
+
+        <div id="menuScreen" class="hidden">
+            <h1>MENU PRINCIPAL</h1>
+            <button onclick="startGame()">NOUVELLE PARTIE</button>
+        </div>
+
+        <div id="cvScreen" class="hidden">
+            <h1>CV - KOUAMOU TONY</h1>
+            <div id="cvContent" style="max-height: 500px; overflow-y: auto; text-align: left; padding: 20px; line-height: 1.6;">
+            </div>
+            <div id="cvProgress" style="margin: 20px 0; font-size: 14px; color: #ff0;"></div>
+            <button onclick="hideCV()">RETOUR</button>
+        </div>
+        
+        <div id="ui">
+            <span>Score: <span id="score">0</span></span> | 
+            <span>Vies: <span id="lives">3</span></span> | 
+            <span>Niveau: <span id="level">1</span></span> |
+            <span>Cadence: <span id="fireBonus">Normal</span></span>
+        </div>
+        <canvas id="gameCanvas" width="800" height="600"></canvas>
+    </div>
+
+    <script>
+        const canvas = document.getElementById('gameCanvas');
+        const ctx = canvas.getContext('2d');
+        
+        let gameState = {
+            running: false,
+            score: 0,
+            lives: 3,
+            level: 1,
+            player: null,
+            enemies: [],
+            bullets: [],
+            enemyBullets: [],
+            powerups: [],
+            keys: {},
+            lastShot: 0,
+            fireRate: 500,
+            tripleShot: false,
+            fireBonus: 0,
+            gameTime: 0,
+            tripleCollected: false,
+            fireCollected: 0,
+            lastTime: 0,
+            scrollSpeed: 2,
+            stars: [],
+            enemySpawnTimer: 0,
+            levelEnemiesKilled: 0,
+            tripleSpawnTime: 0,
+            fireSpawnTimes: [0, 0, 0],
+            highScore: 0
+        };
+
+        class Star {
+            constructor() {
+                this.x = Math.random() * canvas.width;
+                this.y = Math.random() * canvas.height;
+                this.speed = Math.random() * 2 + 0.5;
+                this.size = Math.random() * 2;
+            }
+            
+            draw() {
+                ctx.fillStyle = '#fff';
+                ctx.fillRect(this.x, this.y, this.size, this.size);
+            }
+            
+            update() {
+                this.x -= this.speed;
+                if (this.x < 0) {
+                    this.x = canvas.width;
+                    this.y = Math.random() * canvas.height;
+                }
+            }
+        }
+
+        class Player {
+            constructor() {
+                this.x = 100;
+                this.y = canvas.height / 2;
+                this.width = 40;
+                this.height = 30;
+                this.speed = 5;
+            }
+            
+            draw() {
+                ctx.fillStyle = '#0ff';
+                ctx.beginPath();
+                ctx.moveTo(this.x + 20, this.y);
+                ctx.lineTo(this.x - 20, this.y - 15);
+                ctx.lineTo(this.x - 10, this.y);
+                ctx.lineTo(this.x - 20, this.y + 15);
+                ctx.closePath();
+                ctx.fill();
+                
+                ctx.fillStyle = '#f00';
+                ctx.beginPath();
+                ctx.moveTo(this.x - 15, this.y);
+                ctx.lineTo(this.x - 20, this.y - 5);
+                ctx.lineTo(this.x - 25, this.y);
+                ctx.lineTo(this.x - 20, this.y + 5);
+                ctx.closePath();
+                ctx.fill();
+            }
+            
+            update() {
+                if (gameState.keys['z'] && this.y > 30) this.y -= this.speed;
+                if (gameState.keys['s'] && this.y < canvas.height - 30) this.y += this.speed;
+            }
+        }
+
+        class Enemy {
+            constructor(type) {
+                this.x = canvas.width + 50;
+                this.y = Math.random() * (canvas.height - 100) + 50;
+                this.type = type;
+                this.lastShot = Date.now();
+                
+                if (type === 1) {
+                    this.points = 10;
+                    this.speed = 1.5 + gameState.level * 0.2;
+                    this.shootChance = 0.005;
+                    this.pattern = 'straight';
+                } else if (type === 2) {
+                    this.points = 20;
+                    this.speed = 1.3 + gameState.level * 0.2;
+                    this.shootChance = 0.008;
+                    this.pattern = 'straight';
+                } else {
+                    this.points = 30;
+                    this.speed = 1 + gameState.level * 0.2;
+                    this.shootChance = 0.01;
+                    this.pattern = 'straight';
+                    this.direction = 1;
+                }
+                this.initialY = this.y;
+                this.time = 0;
+            }
+            
+            draw() {
+                ctx.fillStyle = '#f00';
+                
+                if (this.type === 1) {
+                    ctx.fillRect(this.x - 15, this.y - 15, 30, 30);
+                } else if (this.type === 2) {
+                    ctx.fillRect(this.x - 15, this.y - 15, 30, 30);
+                    ctx.fillRect(this.x - 45, this.y - 15, 30, 30);
+                    ctx.fillRect(this.x + 15, this.y - 15, 30, 30);
+                } else {
+                    ctx.fillRect(this.x - 15, this.y - 15, 30, 30);
+                    ctx.fillRect(this.x - 45, this.y - 15, 30, 30);
+                    ctx.fillRect(this.x + 15, this.y - 15, 30, 30);
+                    ctx.fillRect(this.x - 75, this.y - 15, 30, 30);
+                    ctx.fillRect(this.x + 45, this.y - 15, 30, 30);
+                    ctx.fillRect(this.x - 15, this.y - 45, 30, 30);
+                    ctx.fillRect(this.x - 15, this.y + 15, 30, 30);
+                }
+            }
+            
+            update() {
+                this.x -= this.speed;
+                
+                if (Math.random() < this.shootChance && this.x < canvas.width - 100) {
+                    const dx = gameState.player.x - this.x;
+                    const dy = gameState.player.y - this.y;
+                    const angle = Math.atan2(dy, dx);
+                    gameState.enemyBullets.push(new Bullet(this.x, this.y, false, angle));
+                }
+            }
+        }
+
+        class Bullet {
+            constructor(x, y, isPlayer, angle = 0) {
+                this.x = x;
+                this.y = y;
+                this.speed = isPlayer ? 10 : 5;
+                this.isPlayer = isPlayer;
+                this.angle = angle;
+            }
+            
+            draw() {
+                ctx.fillStyle = this.isPlayer ? '#0ff' : '#f00';
+                if (this.isPlayer) {
+                    ctx.fillRect(this.x - 5, this.y - 2, 10, 4);
+                } else {
+                    ctx.beginPath();
+                    ctx.arc(this.x, this.y, 3, 0, Math.PI * 2);
+                    ctx.fill();
+                }
+            }
+            
+            update() {
+                if (this.isPlayer) {
+                    this.x += Math.cos(this.angle) * this.speed;
+                    this.y += Math.sin(this.angle) * this.speed;
+                } else {
+                    this.x += Math.cos(this.angle) * this.speed;
+                    this.y += Math.sin(this.angle) * this.speed;
+                }
+            }
+        }
+
+        class Powerup {
+            constructor(type) {
+                this.x = canvas.width;
+                this.y = Math.random() * (canvas.height - 100) + 50;
+                this.width = 30;
+                this.height = 30;
+                this.speed = 3;
+                this.type = type;
+                this.color = type === 'triple' ? '#0ff' : '#ff0';
+                this.time = 0;
+            }
+            
+            draw() {
+                this.time += 0.1;
+                const pulse = Math.sin(this.time) * 5;
+                ctx.fillStyle = this.color;
+                ctx.beginPath();
+                ctx.arc(this.x, this.y, 15 + pulse, 0, Math.PI * 2);
+                ctx.fill();
+                ctx.fillStyle = '#000';
+                ctx.font = 'bold 14px Arial';
+                ctx.textAlign = 'center';
+                ctx.textBaseline = 'middle';
+                ctx.fillText(this.type === 'triple' ? '3X' : 'F+', this.x, this.y);
+            }
+            
+            update() {
+                this.x -= this.speed;
+            }
+        }
+
+        function initStars() {
+            gameState.stars = [];
+            for (let i = 0; i < 100; i++) {
+                gameState.stars.push(new Star());
+            }
+        }
+
+        function spawnEnemy() {
+            const now = Date.now();
+            if (now - gameState.enemySpawnTimer < 1500 - gameState.level * 150) return;
+            
+            gameState.enemySpawnTimer = now;
+            
+            const rand = Math.random();
+            let type = 1;
+            if (rand > 0.75) type = 3;
+            else if (rand > 0.5) type = 2;
+            
+            gameState.enemies.push(new Enemy(type));
+        }
+
+        function autoShoot() {
+            const now = Date.now();
+            if (now - gameState.lastShot < gameState.fireRate) return;
+            
+            gameState.lastShot = now;
+            
+            if (gameState.tripleShot) {
+                gameState.bullets.push(new Bullet(gameState.player.x + 20, gameState.player.y, true, 0));
+                gameState.bullets.push(new Bullet(gameState.player.x + 20, gameState.player.y, true, -Math.PI / 4));
+                gameState.bullets.push(new Bullet(gameState.player.x + 20, gameState.player.y, true, Math.PI / 4));
+            } else {
+                const bulletsCount = gameState.fireBonus === 2 ? 2 : 1;
+                for (let i = 0; i < bulletsCount; i++) {
+                    setTimeout(() => {
+                        if (gameState.player) {
+                            gameState.bullets.push(new Bullet(gameState.player.x + 20, gameState.player.y, true, 0));
+                        }
+                    }, i * 100);
+                }
+            }
+        }
+
+        function checkCollisions() {
+            gameState.bullets = gameState.bullets.filter(bullet => {
+                for (let i = 0; i < gameState.enemies.length; i++) {
+                    const enemy = gameState.enemies[i];
+                    const dist = Math.sqrt((bullet.x - enemy.x) ** 2 + (bullet.y - enemy.y) ** 2);
+                    if (dist < 25) {
+                        gameState.score += enemy.points;
+                        gameState.levelEnemiesKilled++;
+                        gameState.enemies.splice(i, 1);
+                        updateUI();
+                        
+                        if (gameState.score >= 1000) {
+                            winGame();
+                        }
+                        
+                        if (gameState.levelEnemiesKilled >= 12 + gameState.level * 3) {
+                            nextLevel();
+                        }
+                        
+                        return false;
+                    }
+                }
+                return bullet.x < canvas.width + 50;
+            });
+            
+            gameState.enemyBullets = gameState.enemyBullets.filter(bullet => {
+                const player = gameState.player;
+                const dist = Math.sqrt((bullet.x - player.x) ** 2 + (bullet.y - player.y) ** 2);
+                if (dist < 25) {
+                    gameState.lives--;
+                    updateUI();
+                    if (gameState.lives <= 0) {
+                        gameOver();
+                    }
+                    return false;
+                }
+                return bullet.x > -50 && bullet.x < canvas.width + 50 && 
+                       bullet.y > -50 && bullet.y < canvas.height + 50;
+            });
+            
+            gameState.powerups = gameState.powerups.filter(powerup => {
+                const player = gameState.player;
+                const dist = Math.sqrt((powerup.x - player.x) ** 2 + (powerup.y - player.y) ** 2);
+                if (dist < 30) {
+                    if (powerup.type === 'triple' && !gameState.tripleCollected) {
+                        gameState.tripleShot = true;
+                        gameState.tripleCollected = true;
+                    } else if (powerup.type === 'fire' && gameState.fireCollected < 3) {
+                        gameState.fireCollected++;
+                        gameState.fireBonus = Math.min(gameState.fireBonus + 1, 2);
+                        if (gameState.fireBonus === 1) {
+                            gameState.fireRate = 250;
+                        } else if (gameState.fireBonus === 2) {
+                            gameState.fireRate = 500;
+                        }
+                    }
+                    updateUI();
+                    return false;
+                }
+                return powerup.x > -50;
+            });
+            
+            gameState.enemies = gameState.enemies.filter(enemy => {
+                const dist = Math.sqrt((enemy.x - gameState.player.x) ** 2 + 
+                                      (enemy.y - gameState.player.y) ** 2);
+                if (dist < 30) {
+                    gameState.lives--;
+                    updateUI();
+                    if (gameState.lives <= 0) {
+                        gameOver();
+                    }
+                    return false;
+                }
+                return enemy.x > -50;
+            });
+        }
+
+        function nextLevel() {
+            gameState.level++;
+            gameState.levelEnemiesKilled = 0;
+            gameState.gameTime = 0;
+            updateUI();
+        }
+
+        function updateUI() {
+            document.getElementById('score').textContent = gameState.score;
+            document.getElementById('lives').textContent = gameState.lives;
+            document.getElementById('level').textContent = gameState.level;
+            
+            let bonusText = 'Normal';
+            if (gameState.tripleShot) bonusText = 'Triple';
+            else if (gameState.fireBonus === 1) bonusText = 'Rapide';
+            else if (gameState.fireBonus === 2) bonusText = 'Ultra Rapide';
+            document.getElementById('fireBonus').textContent = bonusText;
+        }
+
+        function gameOver() {
+            gameState.running = false;
+            if (gameState.score > gameState.highScore) {
+                gameState.highScore = gameState.score;
+            }
+            document.getElementById('finalScore').textContent = `Score final: ${gameState.score}`;
+            document.getElementById('gameOverScreen').classList.remove('hidden');
+        }
+
+        function winGame() {
+            gameState.running = false;
+            if (gameState.score > gameState.highScore) {
+                gameState.highScore = gameState.score;
+            }
+            document.getElementById('winLevel').textContent = `Niveau atteint: ${gameState.level}`;
+            document.getElementById('winScreen').classList.remove('hidden');
+        }
+
+        function showCV() {
+            document.getElementById('startScreen').classList.add('hidden');
+            document.getElementById('cvScreen').classList.remove('hidden');
+            displayCV();
+        }
+
+        function hideCV() {
+            document.getElementById('cvScreen').classList.add('hidden');
+            document.getElementById('startScreen').classList.remove('hidden');
+        }
+
+        function displayCV() {
+            const cvContent = document.getElementById('cvContent');
+            const cvProgress = document.getElementById('cvProgress');
+            const score = gameState.highScore;
+
+            const cvSections = [
+                {
+                    unlock: 0,
+                    content: `<h2 style="color: #0ff;">👤 KOUAMOU TONY</h2>
+                    <p><strong>Étudiant en Bachelor Développement Web & Applicatif - ESIEE-IT</strong></p>`
+                },
+                {
+                    unlock: 200,
+                    content: `<h3 style="color: #0ff;">📞 CONTACT</h3>
+                    <p>📱 Numéro : +33 6 51 96 81 00<br>
+                    📧 Email : tonykouamou@gmail.com<br>
+                    💼 LinkedIn : Tony Kouamou<br>
+                    🔗 GitHub : <a href="https://github.com/Memo-tyno" style="color: #0ff;">https://github.com/Memo-tyno</a><br>
+                    📍 Adresse : Ivry-sur-Seine 94200</p>`
+                },
+                {
+                    unlock: 400,
+                    content: `<h3 style="color: #0ff;">💼 EXPÉRIENCES PROFESSIONNELLES</h3>
+                    <p><strong>Technicien IT</strong> - Clap Partners, 2 mois<br>
+                    • Conception de l'infrastructure matérielle d'un parc de postes<br>
+                    • Gestion et maintenance du matériel informatique</p>
+                    <p><strong>Apprenti Ingénieur</strong> - Cegelec, 2 mois<br>
+                    • Élaboration de bilans carbone pour un site tertiaire<br>
+                    • Suivi des achats et coordination avec les fournisseurs</p>`
+                },
+                {
+                    unlock: 600,
+                    content: `<h3 style="color: #0ff;">🛠️ COMPÉTENCES TECHNIQUES</h3>
+                    <p>• <strong>Langages :</strong> Python, SQL, HTML/CSS, JavaScript, C, C++<br>
+                    • <strong>Outils :</strong> KiCad, Proteus, Git/GitHub, VS Code<br>
+                    • <strong>Autres :</strong> Test et débogage, Cybersécurité de base</p>
+                    
+                    <h3 style="color: #0ff;">🤝 COMPÉTENCES TRANSVERSALES</h3>
+                    <p>Résolution de problèmes • Autonomie • Proactivité • Travail d'équipe<br>
+                    Rigueur • Curiosité • Dynamisme • Polyvalence • Créativité</p>`
+                },
+                {
+                    unlock: 800,
+                    content: `<h3 style="color: #0ff;">🎓 FORMATION</h3>
+                    <p>• <strong>Bachelor Développement Web & Applicatif</strong><br>
+                    ESIEE-IT, Paris 15e (2025-2027)</p>
+                    <p>• <strong>BTS CIEL</strong> (Cybersécurité, Informatique, Électronique et Réseaux)<br>
+                    Obtenu en 2025</p>
+                    <p>• <strong>Baccalauréat Général</strong><br>
+                    Spécialités : Mathématiques & Arts plastiques - Obtenu en 2023</p>
+                    
+                    <h3 style="color: #0ff;">🏆 CERTIFICATIONS</h3>
+                    <p>• Certified Full-Stack Developer Curriculum (freeCodeCamp, 2025)<br>
+                    • PSC1 - Prévention et Secours Civiques niveau 1 (2025)<br>
+                    • SecNum académie - Attestation Cyber (ANSSI, 2024)</p>`
+                },
+                {
+                    unlock: 1000,
+                    content: `<h3 style="color: #0ff;">🔍 RECHERCHE D'ALTERNANCE</h3>
+                    <p>Titulaire d'un BTS CIEL et actuellement à la recherche d'un <strong>contrat d'apprentissage de 2 ans</strong>. J'ai développé des PyTasks (applications) lors de mes projets académiques et personnels, en mettant en pratique mes compétences en programmation et en sécurité, et je serais ravi de mettre cette expérience au service de vos projets.</p>
+                    <p><strong>Rythme :</strong> 3 semaines en entreprise / 1 semaine en formation</p>
+                    
+                    <h3 style="color: #0ff;">🌍 LANGUES</h3>
+                    <p>• <strong>Anglais :</strong> Niveau B2 (intermédiaire-avancé)<br>
+                    • <strong>Espagnol :</strong> Niveau B1 (intermédiaire)</p>
+                    
+                    <h3 style="color: #0ff;">💻 PROJETS</h3>
+                    <p><strong>Gestionnaire de mots de passe</strong><br>
+                    • Python : tkinter, json, hashlib, base64<br>
+                    • Gestion et stockage sécurisé de mots de passe</p>
+                    <p><strong>Jeux Gradius</strong><br>
+                    • HTML : canvas, JavaScript : fillRect(), CSS : hover<br>
+                    • Création d'un jeu 2D avec gestion du déplacement et tirs</p>
+                    
+                    <h3 style="color: #0ff;">🎯 CENTRES D'INTÉRÊTS</h3>
+                    <p>Voyage • Sports • Dessin • Cinéma • Cuisine</p>`
+                }
+            ];
+
+            let html = '';
+            let unlockedCount = 0;
+            
+            cvSections.forEach(section => {
+                if (score >= section.unlock) {
+                    html += section.content;
+                    unlockedCount++;
+                } else {
+                    html += `<div style="filter: blur(5px); user-select: none; color: #555;">
+                        <h3>🔒 Section verrouillée</h3>
+                        <p>Atteignez ${section.unlock} points pour débloquer cette section</p>
+                    </div>`;
+                }
+            });
+
+            cvContent.innerHTML = html;
+            
+            if (score >= 1000) {
+                cvProgress.innerHTML = `🎉 <strong>CV COMPLET DÉBLOQUÉ !</strong> (Score: ${score})`;
+                cvProgress.style.color = '#0f0';
+            } else {
+                const nextUnlock = cvSections.find(s => s.unlock > score);
+                if (nextUnlock) {
+                    cvProgress.innerHTML = `📊 Sections débloquées: ${unlockedCount}/${cvSections.length} | Prochain déverrouillage: ${nextUnlock.unlock} points (Score actuel: ${score})`;
+                }
+            }
+        }
+
+        function showMenu() {
+            document.getElementById('gameOverScreen').classList.add('hidden');
+            document.getElementById('winScreen').classList.add('hidden');
+            document.getElementById('menuScreen').classList.add('hidden');
+            document.getElementById('startScreen').classList.remove('hidden');
+        }
+
+        function startGame() {
+            document.getElementById('startScreen').classList.add('hidden');
+            document.getElementById('menuScreen').classList.add('hidden');
+            
+            gameState.running = true;
+            gameState.score = 0;
+            gameState.lives = 3;
+            gameState.level = 1;
+            gameState.bullets = [];
+            gameState.enemyBullets = [];
+            gameState.enemies = [];
+            gameState.powerups = [];
+            gameState.fireBonus = 0;
+            gameState.fireRate = 500;
+            gameState.tripleShot = false;
+            gameState.tripleCollected = false;
+            gameState.fireCollected = 0;
+            gameState.gameTime = 0;
+            gameState.enemySpawnTimer = 0;
+            gameState.levelEnemiesKilled = 0;
+            gameState.tripleSpawnTime = 10 + Math.random() * 15;
+            gameState.fireSpawnTimes = [10, 10, 10];
+            
+            gameState.player = new Player();
+            initStars();
+            updateUI();
+            gameState.lastTime = Date.now();
+            gameLoop();
+        }
+
+        function restartGame() {
+            document.getElementById('gameOverScreen').classList.add('hidden');
+            document.getElementById('winScreen').classList.add('hidden');
+            startGame();
+        }
+
+        function gameLoop() {
+            if (!gameState.running) return;
+            
+            const now = Date.now();
+            const deltaTime = (now - gameState.lastTime) / 1000;
+            gameState.lastTime = now;
+            gameState.gameTime += deltaTime;
+            
+            ctx.clearRect(0, 0, canvas.width, canvas.height);
+            
+            gameState.stars.forEach(star => {
+                star.update();
+                star.draw();
+            });
+            
+            if (!gameState.tripleCollected && gameState.gameTime > gameState.tripleSpawnTime && 
+                !gameState.powerups.some(p => p.type === 'triple')) {
+                gameState.powerups.push(new Powerup('triple'));
+            }
+            
+            if (gameState.fireCollected < 3 && gameState.level <= 3 && 
+                gameState.gameTime > gameState.fireSpawnTimes[gameState.level - 1] &&
+                !gameState.powerups.some(p => p.type === 'fire')) {
+                gameState.powerups.push(new Powerup('fire'));
+                gameState.fireSpawnTimes[gameState.level - 1] = Infinity;
+            }
+            
+            spawnEnemy();
+            
+            gameState.player.update();
+            gameState.player.draw();
+            
+            autoShoot();
+            
+            gameState.bullets.forEach(bullet => {
+                bullet.update();
+                bullet.draw();
+            });
+            
+            gameState.enemyBullets.forEach(bullet => {
+                bullet.update();
+                bullet.draw();
+            });
+            
+            gameState.enemies.forEach(enemy => {
+                enemy.update();
+                enemy.draw();
+            });
+            
+            gameState.powerups.forEach(powerup => {
+                powerup.update();
+                powerup.draw();
+            });
+            
+            checkCollisions();
+            
+            requestAnimationFrame(gameLoop);
+        }
+
+        document.addEventListener('keydown', (e) => {
+            const key = e.key.toLowerCase();
+            if (['z', 's'].includes(key)) {
+                e.preventDefault();
+                gameState.keys[key] = true;
+            }
+        });
+
+        document.addEventListener('keyup', (e) => {
+            const key = e.key.toLowerCase();
+            gameState.keys[key] = false;
+        });
+    </script>
+</body>
+</html>

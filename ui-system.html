@@ -1,0 +1,104 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+<meta charset="UTF-8"/>
+<title>ui-system</title>
+<style>
+  body {
+    margin:0;
+    background:#000;
+    color:#0ff;
+    font-family:monospace;
+    display:flex;
+    align-items:center;
+    justify-content:center;
+    height:100vh;
+  }
+  canvas {
+    border:2px solid #0ff;
+    display:block;
+  }
+  #overlay {
+    position:absolute;
+    top:0;left:0;right:0;bottom:0;
+    display:flex;
+    align-items:center;
+    justify-content:center;
+    background:rgba(0,0,0,0.8);
+    color:#0ff;
+    flex-direction:column;
+    font-size:1.5rem;
+    text-align:center;
+  }
+  button {
+    background:#0ff;
+    color:#000;
+    border:none;
+    padding:10px 20px;
+    margin-top:20px;
+    font-weight:bold;
+    border-radius:8px;
+    cursor:pointer;
+  }
+  button:hover { background:#0cc; }
+</style>
+</head>
+<body>
+  <canvas id="gameCanvas" width="800" height="600"></canvas>
+  <div id="overlay">
+    <div id="menu">
+      <h1>Gradius Style</h1>
+      <p>Utilise les flèches ou Z/S pour te déplacer</p>
+      <button id="startBtn">Commencer</button>
+    </div>
+  </div>
+<script>
+const c=document.getElementById("gameCanvas"),ctx=c.getContext("2d");
+const overlay=document.getElementById("overlay");
+const startBtn=document.getElementById("startBtn");
+
+const gs={running:false,player:null,enemies:[],bullets:[],enemyBullets:[],stars:[],powerups:[],keys:{},score:0,lives:3,level:1,lastTime:0,state:"menu"};
+
+class Star{constructor(){this.reset();}reset(){this.x=Math.random()*c.width;this.y=Math.random()*c.height;this.speed=Math.random()*2+0.5;}update(dt){this.x-=this.speed*dt*60;if(this.x<-2)this.x=c.width+2;}draw(){ctx.fillStyle="#fff";ctx.fillRect(this.x,this.y,2,2);}}
+class Player{constructor(){this.x=100;this.y=c.height/2;this.speed=5;this.cool=0;this.triple=false;this.rapid=false;this.tripleTimer=0;this.rapidTimer=0;}update(dt){if(gs.keys["z"]||gs.keys["ArrowUp"])this.y-=this.speed;if(gs.keys["s"]||gs.keys["ArrowDown"])this.y+=this.speed;this.y=Math.max(20,Math.min(c.height-20,this.y));this.cool-=dt;this.tripleTimer-=dt;this.rapidTimer-=dt;if(this.tripleTimer<=0)this.triple=false;if(this.rapidTimer<=0)this.rapid=false;const cd=this.rapid?0.1:0.25;if(this.cool<=0){this.shoot();this.cool=cd;}}shoot(){if(this.triple){for(let a of[-0.2,0,0.2])gs.bullets.push(new Bullet(this.x+25,this.y,true,a));}else gs.bullets.push(new Bullet(this.x+25,this.y,true));}draw(){ctx.fillStyle="#0ff";ctx.beginPath();ctx.moveTo(this.x+20,this.y);ctx.lineTo(this.x-20,this.y-15);ctx.lineTo(this.x-10,this.y);ctx.lineTo(this.x-20,this.y+15);ctx.closePath();ctx.fill();}}
+class Enemy{constructor(){this.x=c.width+30;this.y=Math.random()*(c.height-60)+30;this.speed=2+gs.level*0.2;this.fireCD=Math.random()*2+1;}update(dt){this.x-=this.speed*dt*60;this.fireCD-=dt;if(this.fireCD<=0){gs.enemyBullets.push(new Bullet(this.x-20,this.y,false));this.fireCD=2+Math.random();}}draw(){ctx.fillStyle="#f00";ctx.fillRect(this.x-15,this.y-15,30,30);}}
+class Bullet{constructor(x,y,p=true,a=0){this.x=x;this.y=y;this.p=p;this.a=a;this.speed=p?10:5;}update(dt){this.x+=(this.p?1:-1)*this.speed*dt*60;this.y+=this.a*100*dt;}draw(){ctx.fillStyle=this.p?"#0ff":"#f00";ctx.fillRect(this.x-2,this.y-2,4,4);}}
+class Powerup{constructor(x,y,type){this.x=x;this.y=y;this.type=type;this.speed=2;}update(dt){this.x-=this.speed*dt*60;}draw(){ctx.fillStyle=this.type==="triple"?"#0f0":"#ff0";ctx.beginPath();ctx.arc(this.x,this.y,8,0,Math.PI*2);ctx.fill();}}
+
+function initStars(){gs.stars=[];for(let i=0;i<80;i++)gs.stars.push(new Star());}
+function spawnEnemy(){if(Math.random()<0.02+gs.level*0.002)gs.enemies.push(new Enemy());}
+function spawnPowerup(x,y){const t=Math.random()<0.5?"triple":"rapid";gs.powerups.push(new Powerup(x,y,t));}
+function collide(a,b,d){return Math.hypot(a.x-b.x,a.y-b.y)<d;}
+
+function startGame(){overlay.style.display="none";Object.assign(gs,{running:true,state:"play",score:0,lives:3,level:1,enemies:[],bullets:[],enemyBullets:[],powerups:[]});gs.player=new Player();initStars();gs.lastTime=Date.now();loop();}
+function gameOver(win=false){gs.state=win?"win":"gameover";gs.running=false;overlay.style.display="flex";overlay.innerHTML=win?`<h1>Victoire !</h1><p>Score : ${gs.score}</p><button onclick="startGame()">Rejouer</button>`:`<h1>Game Over</h1><p>Score : ${gs.score}</p><button onclick="startGame()">Rejouer</button>`;}
+
+function loop(){if(!gs.running)return;const now=Date.now(),dt=(now-gs.lastTime)/1000;gs.lastTime=now;
+ctx.clearRect(0,0,c.width,c.height);
+gs.stars.forEach(s=>{s.update(dt);s.draw();});
+gs.player.update(dt);gs.player.draw();
+spawnEnemy();
+gs.enemies.forEach(e=>{e.update(dt);e.draw();});
+gs.bullets.forEach(b=>{b.update(dt);b.draw();});
+gs.enemyBullets.forEach(b=>{b.update(dt);b.draw();});
+gs.powerups.forEach(p=>{p.update(dt);p.draw();});
+
+// collisions
+gs.bullets.forEach(b=>gs.enemies.forEach(e=>{if(collide(b,e,20)){gs.score+=10;if(Math.random()<0.2)spawnPowerup(e.x,e.y);e.dead=true;b.dead=true;if(gs.score>gs.level*200){gs.level++;}}}));
+gs.powerups.forEach(p=>{if(collide(p,gs.player,20)){if(p.type==="triple"){gs.player.triple=true;gs.player.tripleTimer=10;}else{gs.player.rapid=true;gs.player.rapidTimer=10;}p.dead=true;}});
+gs.enemyBullets.forEach(b=>{if(collide(b,gs.player,20)){gs.lives--;b.dead=true;if(gs.lives<=0)gameOver(false);}});
+gs.enemies=gs.enemies.filter(e=>!e.dead&&e.x>-50);
+gs.bullets=gs.bullets.filter(b=>!b.dead&&b.x<c.width+50);
+gs.enemyBullets=gs.enemyBullets.filter(b=>!b.dead&&b.x>-50);
+gs.powerups=gs.powerups.filter(p=>!p.dead&&p.x>-50);
+ctx.fillStyle="#0ff";
+ctx.fillText(`Score: ${gs.score}  Vies: ${gs.lives}  Niveau: ${gs.level}`,10,20);
+if(gs.level>=5)gameOver(true);
+if(gs.running)requestAnimationFrame(loop);
+}
+window.addEventListener("keydown",e=>gs.keys[e.key]=true);
+window.addEventListener("keyup",e=>gs.keys[e.key]=false);
+startBtn.onclick=()=>startGame();
+</script>
+</body>
+</html>
