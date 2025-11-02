@@ -1,0 +1,41 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head><meta charset="UTF-8"/><title>collision-system</title>
+<style>body{margin:0;display:flex;align-items:center;justify-content:center;height:100vh;background:#000;color:#0ff;font-family:monospace;}canvas{border:2px solid #0ff;}</style></head>
+<body><canvas id="gameCanvas" width="800" height="600"></canvas>
+<script>
+const c=document.getElementById("gameCanvas"),ctx=c.getContext("2d");
+const gs={running:true,player:null,enemies:[],bullets:[],enemyBullets:[],stars:[],keys:{},score:0,lives:3,lastTime:0};
+class Star{constructor(){this.reset();}reset(){this.x=Math.random()*c.width;this.y=Math.random()*c.height;this.speed=Math.random()*2+0.5;}update(dt){this.x-=this.speed*dt*60;if(this.x<-2)this.x=c.width+2;}draw(){ctx.fillStyle="#fff";ctx.fillRect(this.x,this.y,2,2);}}
+class Player{constructor(){this.x=100;this.y=c.height/2;this.speed=5;this.cool=0;}update(dt){if(gs.keys["z"]||gs.keys["ArrowUp"])this.y-=this.speed;if(gs.keys["s"]||gs.keys["ArrowDown"])this.y+=this.speed;this.y=Math.max(20,Math.min(c.height-20,this.y));this.cool-=dt;if(this.cool<=0){gs.bullets.push(new Bullet(this.x+25,this.y,true));this.cool=0.25;}}draw(){ctx.fillStyle="#0ff";ctx.beginPath();ctx.moveTo(this.x+20,this.y);ctx.lineTo(this.x-20,this.y-15);ctx.lineTo(this.x-10,this.y);ctx.lineTo(this.x-20,this.y+15);ctx.closePath();ctx.fill();}}
+class Enemy{constructor(){this.x=c.width+30;this.y=Math.random()*(c.height-60)+30;this.speed=2;this.fireCD=Math.random()*2+1;}update(dt){this.x-=this.speed*dt*60;this.fireCD-=dt;if(this.fireCD<=0){gs.enemyBullets.push(new Bullet(this.x-20,this.y,false));this.fireCD=2+Math.random();}}draw(){ctx.fillStyle="#f00";ctx.fillRect(this.x-15,this.y-15,30,30);}}
+class Bullet{constructor(x,y,p=true){this.x=x;this.y=y;this.p=p;this.speed=p?10:5;}update(dt){this.x+=(this.p?1:-1)*this.speed*dt*60;}draw(){ctx.fillStyle=this.p?"#0ff":"#f00";ctx.fillRect(this.x-2,this.y-2,4,4);}}
+function initStars(){for(let i=0;i<80;i++)gs.stars.push(new Star());}
+function spawnEnemy(){if(Math.random()<0.02)gs.enemies.push(new Enemy());}
+function collide(a,b,dist){return Math.hypot(a.x-b.x,a.y-b.y)<dist;}
+function start(){gs.player=new Player();initStars();gs.lastTime=Date.now();loop();}
+function loop(){if(!gs.running)return;const now=Date.now(),dt=(now-gs.lastTime)/1000;gs.lastTime=now;
+ctx.clearRect(0,0,c.width,c.height);
+gs.stars.forEach(s=>{s.update(dt);s.draw();});gs.player.update(dt);gs.player.draw();spawnEnemy();
+gs.enemies.forEach(e=>{e.update(dt);e.draw();});
+gs.bullets.forEach(b=>{b.update(dt);b.draw();});
+gs.enemyBullets.forEach(b=>{b.update(dt);b.draw();});
+// collisions
+gs.bullets.forEach(b=>{
+    gs.enemies.forEach(e=>{
+        if(collide(b,e,20)){gs.score+=10;e.dead=true;b.dead=true;}
+    });
+});
+gs.enemyBullets.forEach(b=>{
+    if(collide(b,gs.player,20)){gs.lives--;b.dead=true;if(gs.lives<=0)gs.running=false;}
+});
+gs.enemies=gs.enemies.filter(e=>!e.dead&&e.x>-50);
+gs.bullets=gs.bullets.filter(b=>!b.dead&&b.x<c.width+50);
+gs.enemyBullets=gs.enemyBullets.filter(b=>!b.dead&&b.x>-50);
+ctx.fillStyle="#0ff";ctx.fillText("Score:"+gs.score+" Vies:"+gs.lives,10,20);
+if(gs.running)requestAnimationFrame(loop);else ctx.fillText("GAME OVER",c.width/2-40,c.height/2);
+}
+window.addEventListener("keydown",e=>gs.keys[e.key]=true);
+window.addEventListener("keyup",e=>gs.keys[e.key]=false);
+start();
+</script></body></html>
