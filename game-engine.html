@@ -1,0 +1,302 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+    <title>Gradius Style - game-engine</title>
+    <style>
+        /* Styles de base — cadre simple pour le développement du moteur */
+        :root {
+            --bg: #000;
+            --accent: #0ff;
+            --panel: rgba(0,20,40,0.95);
+        }
+        * { box-sizing: border-box; }
+        body {
+            margin: 0;
+            min-height: 100vh;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            background: var(--bg);
+            color: var(--accent);
+            font-family: "Courier New", monospace;
+        }
+        #gameContainer {
+            text-align: center;
+            position: relative;
+        }
+        canvas {
+            display: block;
+            border: 2px solid var(--accent);
+            background: linear-gradient(to bottom, #000 0%, #001 50%, #002 100%);
+        }
+        #controlsBar {
+            margin-top: 12px;
+            color: var(--accent);
+        }
+        button {
+            background: transparent;
+            color: var(--accent);
+            border: 2px solid var(--accent);
+            padding: 8px 14px;
+            cursor: pointer;
+            font-family: inherit;
+        }
+        button:hover {
+            background: var(--accent);
+            color: #000;
+        }
+        /* Écrans et panneaux seront gérés dans une branche UI ultérieure */
+    </style>
+</head>
+<body>
+    <div id="gameContainer">
+        <canvas id="gameCanvas" width="800" height="600"></canvas>
+        <div id="controlsBar">
+            <button id="startBtn">Démarrer le moteur</button>
+            <span style="margin-left:12px; font-size:14px;">(branche <strong>game-engine</strong>)</span>
+        </div>
+    </div>
+
+    <script>
+    /* =========================
+       game-engine: base du moteur
+       - gameState (structure)
+       - classes : Star, Player, Enemy, Bullet
+       - initStars(), spawnEnemy()
+       - startGame(), gameLoop()
+       ========================= */
+
+    const canvas = document.getElementById('gameCanvas');
+    const ctx = canvas.getContext('2d');
+
+    const gameState = {
+        running: false,
+        score: 0,
+        lives: 3,
+        level: 1,
+        player: null,
+        enemies: [],
+        bullets: [],
+        enemyBullets: [],
+        stars: [],
+        lastTime: 0,
+        enemySpawnTimer: 0
+    };
+
+    /* -------------------------
+       Classe Star (background)
+       ------------------------- */
+    class Star {
+        constructor() {
+            this.reset();
+        }
+        reset() {
+            this.x = Math.random() * canvas.width;
+            this.y = Math.random() * canvas.height;
+            this.speed = Math.random() * 2 + 0.5;
+            this.size = Math.random() * 2 + 0.3;
+        }
+        update(dt) {
+            this.x -= this.speed * dt * 60; // dt en secondes, ajustement visible
+            if (this.x < -2) this.reset(), this.x = canvas.width + 2;
+        }
+        draw() {
+            ctx.fillStyle = '#fff';
+            ctx.fillRect(this.x, this.y, this.size, this.size);
+        }
+    }
+
+    /* -------------------------
+       Classe Player (visuel)
+       ------------------------- */
+    class Player {
+        constructor() {
+            this.x = 100;
+            this.y = canvas.height / 2;
+            this.width = 40;
+            this.height = 30;
+            this.speed = 5;
+        }
+        update(dt) {
+            // Pas de gestion de contrôle dans cette branche.
+            // On garde la méthode pour l'étendre ensuite.
+        }
+        draw() {
+            ctx.fillStyle = '#0ff';
+            ctx.beginPath();
+            ctx.moveTo(this.x + 20, this.y);
+            ctx.lineTo(this.x - 20, this.y - 15);
+            ctx.lineTo(this.x - 10, this.y);
+            ctx.lineTo(this.x - 20, this.y + 15);
+            ctx.closePath();
+            ctx.fill();
+
+            // petit cockpit rouge
+            ctx.fillStyle = '#f00';
+            ctx.beginPath();
+            ctx.moveTo(this.x - 15, this.y);
+            ctx.lineTo(this.x - 20, this.y - 5);
+            ctx.lineTo(this.x - 25, this.y);
+            ctx.lineTo(this.x - 20, this.y + 5);
+            ctx.closePath();
+            ctx.fill();
+        }
+    }
+
+    /* -------------------------
+       Classe Enemy (simple)
+       ------------------------- */
+    class Enemy {
+        constructor(type = 1) {
+            this.type = type;
+            this.x = canvas.width + 50;
+            this.y = 50 + Math.random() * (canvas.height - 100);
+            this.speed = 1 + Math.random() * 1.5 + (gameState.level - 1) * 0.2;
+            this.points = (type === 1) ? 10 : (type === 2) ? 20 : 30;
+            this.time = 0;
+        }
+        update(dt) {
+            this.x -= this.speed * dt * 60;
+            // pattern simple à étendre plus tard
+            this.time += dt;
+        }
+        draw() {
+            ctx.fillStyle = '#f00';
+            // dessin simple selon type
+            if (this.type === 1) {
+                ctx.fillRect(this.x - 15, this.y - 15, 30, 30);
+            } else if (this.type === 2) {
+                ctx.fillRect(this.x - 20, this.y - 12, 40, 24);
+                ctx.fillRect(this.x + 18, this.y - 12, 12, 24);
+            } else {
+                ctx.fillRect(this.x - 22, this.y - 18, 44, 36);
+            }
+        }
+    }
+
+    /* -------------------------
+       Classe Bullet (placeholder)
+       ------------------------- */
+    class Bullet {
+        constructor(x, y, isPlayer = true, angle = 0) {
+            this.x = x;
+            this.y = y;
+            this.isPlayer = isPlayer;
+            this.angle = angle;
+            this.speed = isPlayer ? 10 : 5;
+        }
+        update(dt) {
+            const v = this.speed * dt * 60;
+            this.x += Math.cos(this.angle) * v;
+            this.y += Math.sin(this.angle) * v;
+        }
+        draw() {
+            ctx.fillStyle = this.isPlayer ? '#0ff' : '#f00';
+            if (this.isPlayer) ctx.fillRect(this.x - 5, this.y - 2, 10, 4);
+            else {
+                ctx.beginPath();
+                ctx.arc(this.x, this.y, 3, 0, Math.PI*2);
+                ctx.fill();
+            }
+        }
+    }
+
+    /* -------------------------
+       Initialisation des étoiles
+       ------------------------- */
+    function initStars(count = 100) {
+        gameState.stars = [];
+        for (let i = 0; i < count; i++) {
+            gameState.stars.push(new Star());
+        }
+    }
+
+    /* -------------------------
+       Spawn d'ennemis (basique)
+       ------------------------- */
+    function spawnEnemy() {
+        const now = Date.now();
+        // simple timer; spawn toutes les 1.5s approximativement
+        if (!gameState.enemySpawnTimer) gameState.enemySpawnTimer = now;
+        if (now - gameState.enemySpawnTimer < 1500) return;
+        gameState.enemySpawnTimer = now;
+
+        const rand = Math.random();
+        let type = 1;
+        if (rand > 0.75) type = 3;
+        else if (rand > 0.5) type = 2;
+
+        gameState.enemies.push(new Enemy(type));
+    }
+
+    /* -------------------------
+       Démarrage et boucle de jeu
+       ------------------------- */
+    function startGame() {
+        // reset minimal
+        gameState.running = true;
+        gameState.score = 0;
+        gameState.lives = 3;
+        gameState.level = 1;
+        gameState.bullets = [];
+        gameState.enemyBullets = [];
+        gameState.enemies = [];
+        gameState.player = new Player();
+        initStars(80);
+        gameState.lastTime = Date.now();
+        gameState.enemySpawnTimer = 0;
+        requestAnimationFrame(gameLoop);
+    }
+
+    function gameLoop() {
+        if (!gameState.running) return;
+
+        const now = Date.now();
+        const dt = (now - gameState.lastTime) / 1000; // delta en secondes
+        gameState.lastTime = now;
+
+        // nettoyage canvas
+        ctx.clearRect(0, 0, canvas.width, canvas.height);
+
+        // UPDATE
+        gameState.stars.forEach(s => s.update(dt));
+        gameState.player.update(dt);
+        spawnEnemy();
+
+        gameState.enemies.forEach(e => e.update(dt));
+        gameState.bullets.forEach(b => b.update(dt));
+        gameState.enemyBullets.forEach(b => b.update(dt));
+
+        // DRAW
+        gameState.stars.forEach(s => s.draw());
+        gameState.player.draw();
+        gameState.enemies.forEach(e => e.draw());
+        gameState.bullets.forEach(b => b.draw());
+        gameState.enemyBullets.forEach(b => b.draw());
+
+        // nettoyage simple des entités hors écran
+        gameState.enemies = gameState.enemies.filter(e => e.x > -100);
+        gameState.bullets  = gameState.bullets.filter(b => b.x < canvas.width + 100 && b.x > -100 && b.y > -100 && b.y < canvas.height + 100);
+        gameState.enemyBullets = gameState.enemyBullets.filter(b => b.x > -200);
+
+        requestAnimationFrame(gameLoop);
+    }
+
+    /* =========================
+       Hooks UI minimal pour tester
+       ========================= */
+    document.getElementById('startBtn').addEventListener('click', () => {
+        if (!gameState.running) startGame();
+    });
+
+    // Pour debug rapide dans la branche : appuyer sur la console pour forcer spawn
+    window.__debug = {
+        spawnEnemy: () => gameState.enemies.push(new Enemy(1)),
+        spawnMany: (n=5) => { for (let i=0;i<n;i++) gameState.enemies.push(new Enemy(1)); }
+    };
+
+    </script>
+</body>
+</html>
