@@ -26,47 +26,11 @@
             margin: 20px auto;
             touch-action: none;
         }
-        #touchControls {
-            display: none;
-            position: fixed;
-            bottom: 20px;
-            right: 20px;
-            z-index: 5;
-        }
-        .touchButton {
-            width: 80px;
-            height: 80px;
-            background: rgba(0, 255, 255, 0.3);
-            border: 2px solid #0ff;
-            border-radius: 50%;
-            margin: 10px;
-            font-size: 24px;
-            color: #0ff;
-            display: flex;
-            align-items: center;
-            justify-content: center;
-            user-select: none;
-            -webkit-user-select: none;
-            touch-action: none;
-        }
-        .touchButton:active {
-            background: rgba(0, 255, 255, 0.6);
-        }
-        @media (max-width: 768px) {
-            #touchControls {
-                display: flex;
-                flex-direction: column;
-            }
-            canvas {
-                width: 100%;
-                height: auto;
-            }
-        }
         #ui {
             font-size: 18px;
             margin-bottom: 10px;
         }
-        #startScreen, #gameOverScreen, #winScreen, #menuScreen {
+        #startScreen, #gameOverScreen, #winScreen, #menuScreen, #cvScreen {
             position: absolute;
             top: 50%;
             left: 50%;
@@ -76,6 +40,25 @@
             border: 3px solid #0ff;
             text-align: center;
             z-index: 10;
+        }
+        #levelNotification {
+            position: absolute;
+            top: 50%;
+            left: 50%;
+            transform: translate(-50%, -50%);
+            background: rgba(0, 20, 40, 0.95);
+            padding: 40px 60px;
+            border: 3px solid #0ff;
+            text-align: center;
+            z-index: 15;
+            display: none;
+            font-size: 36px;
+            color: #0ff;
+            animation: pulse 0.5s ease-in-out infinite;
+        }
+        @keyframes pulse {
+            0%, 100% { transform: translate(-50%, -50%) scale(1); }
+            50% { transform: translate(-50%, -50%) scale(1.1); }
         }
         .hidden {
             display: none;
@@ -107,6 +90,48 @@
             font-size: 24px;
             margin: 20px 0;
         }
+        #touchControls {
+            display: none;
+            position: fixed;
+            bottom: 20px;
+            right: 20px;
+            z-index: 5;
+        }
+        .touchButton {
+            width: 80px;
+            height: 80px;
+            background: rgba(0, 255, 255, 0.3);
+            border: 2px solid #0ff;
+            border-radius: 50%;
+            margin: 10px;
+            font-size: 24px;
+            color: #0ff;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            user-select: none;
+            -webkit-user-select: none;
+            touch-action: none;
+        }
+        .touchButton:active {
+            background: rgba(0, 255, 255, 0.6);
+        }
+        .buttonContainer {
+            display: flex;
+            justify-content: center;
+            gap: 20px;
+            margin-top: 20px;
+        }
+        @media (max-width: 768px) {
+            #touchControls {
+                display: flex;
+                flex-direction: column;
+            }
+            canvas {
+                width: 100%;
+                height: auto;
+            }
+        }
     </style>
 </head>
 <body>
@@ -120,10 +145,10 @@
                 (Tir automatique)
             </div>
             <div style="margin-top: 20px; font-size: 14px;">
-                <strong>OBJECTIF:</strong> 1000 points pour gagner!<br><br>
+                <strong>OBJECTIF:</strong> Atteindre 1000 points puis continuer !<br><br>
                 <strong>BONUS:</strong><br>
-                Tir Triple (cyan) - 1 fois maximum<br>
-                Cadence++ (jaune) - 3 fois maximum
+                Tir Triple (cyan) - Effet de 10s, réapparaît après<br>
+                Cadence++ (jaune) - 1 fois maximum
             </div>
             <button onclick="startGame()">COMMENCER</button>
             <button onclick="showCV()">CV</button>
@@ -137,11 +162,12 @@
         </div>
         
         <div id="winScreen" class="hidden">
-            <h1>VICTOIRE!</h1>
-            <h2>Vous avez atteint 1000 points!</h2>
-            <h2 id="winLevel"></h2>
-            <button onclick="showMenu()">MENU</button>
-            <button onclick="restartGame()">REJOUER</button>
+            <h1>CV COMPLET DÉBLOQUÉ !</h1>
+            <h2 id="winScore"></h2>
+            <div class="buttonContainer">
+                <button onclick="showCVFromWin()">CV</button>
+                <button onclick="continueGame()">CONTINUER</button>
+            </div>
         </div>
 
         <div id="menuScreen" class="hidden">
@@ -156,12 +182,15 @@
             <div id="cvProgress" style="margin: 20px 0; font-size: 14px; color: #ff0;"></div>
             <button onclick="hideCV()">RETOUR</button>
         </div>
+
+        <div id="levelNotification"></div>
         
         <div id="ui">
+            <span>CV: <span id="cvPercent">0</span>%</span> | 
             <span>Score: <span id="score">0</span></span> | 
             <span>Vies: <span id="lives">3</span></span> | 
             <span>Niveau: <span id="level">1</span></span> |
-            <span>Cadence: <span id="fireBonus">Normal</span></span>
+            <span>Objectif: <span id="objective">1000</span></span>
         </div>
         <canvas id="gameCanvas" width="800" height="600"></canvas>
         
@@ -177,9 +206,11 @@
         
         let gameState = {
             running: false,
+            paused: false,
             score: 0,
             lives: 3,
             level: 1,
+            objective: 1000,
             player: null,
             enemies: [],
             bullets: [],
@@ -189,18 +220,20 @@
             lastShot: 0,
             fireRate: 500,
             tripleShot: false,
-            fireBonus: 0,
+            tripleShotEndTime: 0,
+            fireBonus: false,
             gameTime: 0,
-            tripleCollected: false,
-            fireCollected: 0,
+            cadenceCollected: false,
             lastTime: 0,
-            scrollSpeed: 2,
             stars: [],
             enemySpawnTimer: 0,
             levelEnemiesKilled: 0,
-            tripleSpawnTime: 0,
-            fireSpawnTimes: [0, 0, 0],
-            highScore: 0
+            highScore: 0,
+            nextTripleSpawn: 0,
+            nextCadenceSpawn: 0,
+            levelTransition: false,
+            levelTransitionTime: 0,
+            fromWinScreen: false
         };
 
         class Star {
@@ -271,18 +304,14 @@
                     this.points = 10;
                     this.speed = 1.5 + gameState.level * 0.2;
                     this.shootChance = 0.005;
-                    this.pattern = 'straight';
                 } else if (type === 2) {
                     this.points = 20;
                     this.speed = 1.3 + gameState.level * 0.2;
                     this.shootChance = 0.008;
-                    this.pattern = 'straight';
                 } else {
                     this.points = 30;
                     this.speed = 1 + gameState.level * 0.2;
                     this.shootChance = 0.01;
-                    this.pattern = 'straight';
-                    this.direction = 1;
                 }
                 this.initialY = this.y;
                 this.time = 0;
@@ -341,13 +370,8 @@
             }
             
             update() {
-                if (this.isPlayer) {
-                    this.x += Math.cos(this.angle) * this.speed;
-                    this.y += Math.sin(this.angle) * this.speed;
-                } else {
-                    this.x += Math.cos(this.angle) * this.speed;
-                    this.y += Math.sin(this.angle) * this.speed;
-                }
+                this.x += Math.cos(this.angle) * this.speed;
+                this.y += Math.sin(this.angle) * this.speed;
             }
         }
 
@@ -390,6 +414,8 @@
         }
 
         function spawnEnemy() {
+            if (gameState.levelTransition) return;
+            
             const now = Date.now();
             if (now - gameState.enemySpawnTimer < 1500 - gameState.level * 150) return;
             
@@ -410,18 +436,35 @@
             gameState.lastShot = now;
             
             if (gameState.tripleShot) {
+                const angle10Deg = 10 * Math.PI / 180;
                 gameState.bullets.push(new Bullet(gameState.player.x + 20, gameState.player.y, true, 0));
-                gameState.bullets.push(new Bullet(gameState.player.x + 20, gameState.player.y, true, -Math.PI / 4));
-                gameState.bullets.push(new Bullet(gameState.player.x + 20, gameState.player.y, true, Math.PI / 4));
+                gameState.bullets.push(new Bullet(gameState.player.x + 20, gameState.player.y, true, -angle10Deg));
+                gameState.bullets.push(new Bullet(gameState.player.x + 20, gameState.player.y, true, angle10Deg));
             } else {
-                const bulletsCount = gameState.fireBonus === 2 ? 2 : 1;
-                for (let i = 0; i < bulletsCount; i++) {
-                    setTimeout(() => {
-                        if (gameState.player) {
-                            gameState.bullets.push(new Bullet(gameState.player.x + 20, gameState.player.y, true, 0));
-                        }
-                    }, i * 100);
-                }
+                gameState.bullets.push(new Bullet(gameState.player.x + 20, gameState.player.y, true, 0));
+            }
+        }
+
+        function managePowerups() {
+            const now = Date.now();
+            
+            // Triple Shot
+            if (gameState.tripleShot && now >= gameState.tripleShotEndTime) {
+                gameState.tripleShot = false;
+                gameState.nextTripleSpawn = now + (8000 + Math.random() * 12000);
+            }
+            
+            if (!gameState.tripleShot && now >= gameState.nextTripleSpawn && 
+                !gameState.powerups.some(p => p.type === 'triple')) {
+                gameState.powerups.push(new Powerup('triple'));
+                gameState.nextTripleSpawn = Infinity;
+            }
+            
+            // Cadence
+            if (!gameState.cadenceCollected && now >= gameState.nextCadenceSpawn && 
+                !gameState.powerups.some(p => p.type === 'cadence')) {
+                gameState.powerups.push(new Powerup('cadence'));
+                gameState.nextCadenceSpawn = now + (10000 + Math.random() * 10000);
             }
         }
 
@@ -436,8 +479,8 @@
                         gameState.enemies.splice(i, 1);
                         updateUI();
                         
-                        if (gameState.score >= 1000) {
-                            winGame();
+                        if (gameState.score >= gameState.objective) {
+                            reachObjective();
                         }
                         
                         if (gameState.levelEnemiesKilled >= 12 + gameState.level * 3) {
@@ -469,17 +512,13 @@
                 const player = gameState.player;
                 const dist = Math.sqrt((powerup.x - player.x) ** 2 + (powerup.y - player.y) ** 2);
                 if (dist < 30) {
-                    if (powerup.type === 'triple' && !gameState.tripleCollected) {
+                    if (powerup.type === 'triple') {
                         gameState.tripleShot = true;
-                        gameState.tripleCollected = true;
-                    } else if (powerup.type === 'fire' && gameState.fireCollected < 3) {
-                        gameState.fireCollected++;
-                        gameState.fireBonus = Math.min(gameState.fireBonus + 1, 2);
-                        if (gameState.fireBonus === 1) {
-                            gameState.fireRate = 250;
-                        } else if (gameState.fireBonus === 2) {
-                            gameState.fireRate = 500;
-                        }
+                        gameState.tripleShotEndTime = Date.now() + 10000;
+                    } else if (powerup.type === 'cadence' && !gameState.cadenceCollected) {
+                        gameState.cadenceCollected = true;
+                        gameState.fireBonus = true;
+                        gameState.fireRate = 250;
                     }
                     updateUI();
                     return false;
@@ -505,20 +544,55 @@
         function nextLevel() {
             gameState.level++;
             gameState.levelEnemiesKilled = 0;
-            gameState.gameTime = 0;
+            gameState.levelTransition = true;
+            gameState.levelTransitionTime = 0;
+            gameState.enemies = [];
+            
+            const notification = document.getElementById('levelNotification');
+            notification.textContent = `NIVEAU ${gameState.level}`;
+            notification.style.display = 'block';
+            
+            setTimeout(() => {
+                notification.style.display = 'none';
+                gameState.levelTransition = false;
+            }, 3000);
+            
             updateUI();
         }
 
+        function reachObjective() {
+            if (gameState.score > gameState.highScore) {
+                gameState.highScore = gameState.score;
+            }
+            gameState.paused = true;
+            document.getElementById('winScore').textContent = `Score: ${gameState.score} points`;
+            document.getElementById('winScreen').classList.remove('hidden');
+        }
+
+        function continueGame() {
+            document.getElementById('winScreen').classList.add('hidden');
+            gameState.objective += 1000;
+            gameState.paused = false;
+            updateUI();
+        }
+
+        function calculateCVPercent(score) {
+            if (score >= 1000) return 100;
+            if (score >= 800) return 83;
+            if (score >= 600) return 67;
+            if (score >= 400) return 50;
+            if (score >= 200) return 33;
+            if (score >= 0) return 17;
+            return 0;
+        }
+
         function updateUI() {
+            const cvPercent = calculateCVPercent(gameState.score);
+            document.getElementById('cvPercent').textContent = cvPercent;
             document.getElementById('score').textContent = gameState.score;
             document.getElementById('lives').textContent = gameState.lives;
             document.getElementById('level').textContent = gameState.level;
-            
-            let bonusText = 'Normal';
-            if (gameState.tripleShot) bonusText = 'Triple';
-            else if (gameState.fireBonus === 1) bonusText = 'Rapide';
-            else if (gameState.fireBonus === 2) bonusText = 'Ultra Rapide';
-            document.getElementById('fireBonus').textContent = bonusText;
+            document.getElementById('objective').textContent = gameState.objective;
         }
 
         function gameOver() {
@@ -530,24 +604,34 @@
             document.getElementById('gameOverScreen').classList.remove('hidden');
         }
 
-        function winGame() {
-            gameState.running = false;
-            if (gameState.score > gameState.highScore) {
-                gameState.highScore = gameState.score;
-            }
-            document.getElementById('winLevel').textContent = `Niveau atteint: ${gameState.level}`;
-            document.getElementById('winScreen').classList.remove('hidden');
+        function showMenu() {
+            document.getElementById('gameOverScreen').classList.add('hidden');
+            document.getElementById('winScreen').classList.add('hidden');
+            document.getElementById('menuScreen').classList.add('hidden');
+            document.getElementById('startScreen').classList.remove('hidden');
         }
 
         function showCV() {
             document.getElementById('startScreen').classList.add('hidden');
             document.getElementById('cvScreen').classList.remove('hidden');
+            gameState.fromWinScreen = false;
+            displayCV();
+        }
+
+        function showCVFromWin() {
+            document.getElementById('winScreen').classList.add('hidden');
+            document.getElementById('cvScreen').classList.remove('hidden');
+            gameState.fromWinScreen = true;
             displayCV();
         }
 
         function hideCV() {
             document.getElementById('cvScreen').classList.add('hidden');
-            document.getElementById('startScreen').classList.remove('hidden');
+            if (gameState.fromWinScreen) {
+                document.getElementById('winScreen').classList.remove('hidden');
+            } else {
+                document.getElementById('startScreen').classList.remove('hidden');
+            }
         }
 
         function displayCV() {
@@ -657,35 +741,34 @@
             }
         }
 
-        function showMenu() {
-            document.getElementById('gameOverScreen').classList.add('hidden');
-            document.getElementById('winScreen').classList.add('hidden');
-            document.getElementById('menuScreen').classList.add('hidden');
-            document.getElementById('startScreen').classList.remove('hidden');
-        }
-
         function startGame() {
             document.getElementById('startScreen').classList.add('hidden');
             document.getElementById('menuScreen').classList.add('hidden');
             
             gameState.running = true;
+            gameState.paused = false;
             gameState.score = 0;
             gameState.lives = 3;
             gameState.level = 1;
+            gameState.objective = 1000;
             gameState.bullets = [];
             gameState.enemyBullets = [];
             gameState.enemies = [];
             gameState.powerups = [];
-            gameState.fireBonus = 0;
+            gameState.fireBonus = false;
             gameState.fireRate = 500;
             gameState.tripleShot = false;
-            gameState.tripleCollected = false;
-            gameState.fireCollected = 0;
+            gameState.tripleShotEndTime = 0;
+            gameState.cadenceCollected = false;
             gameState.gameTime = 0;
             gameState.enemySpawnTimer = 0;
             gameState.levelEnemiesKilled = 0;
-            gameState.tripleSpawnTime = 10 + Math.random() * 15;
-            gameState.fireSpawnTimes = [10, 10, 10];
+            gameState.levelTransition = false;
+            gameState.levelTransitionTime = 0;
+            
+            const now = Date.now();
+            gameState.nextTripleSpawn = now + (10000 + Math.random() * 10000);
+            gameState.nextCadenceSpawn = now + (10000 + Math.random() * 10000);
             
             gameState.player = new Player();
             initStars();
@@ -706,7 +789,14 @@
             const now = Date.now();
             const deltaTime = (now - gameState.lastTime) / 1000;
             gameState.lastTime = now;
-            gameState.gameTime += deltaTime;
+            
+            if (!gameState.paused) {
+                gameState.gameTime += deltaTime;
+                
+                if (gameState.levelTransition) {
+                    gameState.levelTransitionTime += deltaTime;
+                }
+            }
             
             ctx.clearRect(0, 0, canvas.width, canvas.height);
             
@@ -715,46 +805,37 @@
                 star.draw();
             });
             
-            if (!gameState.tripleCollected && gameState.gameTime > gameState.tripleSpawnTime && 
-                !gameState.powerups.some(p => p.type === 'triple')) {
-                gameState.powerups.push(new Powerup('triple'));
+            if (!gameState.paused) {
+                managePowerups();
+                spawnEnemy();
+                
+                gameState.player.update();
+                autoShoot();
+                
+                gameState.bullets.forEach(bullet => {
+                    bullet.update();
+                    bullet.draw();
+                });
+                
+                gameState.enemyBullets.forEach(bullet => {
+                    bullet.update();
+                    bullet.draw();
+                });
+                
+                gameState.enemies.forEach(enemy => {
+                    enemy.update();
+                    enemy.draw();
+                });
+                
+                gameState.powerups.forEach(powerup => {
+                    powerup.update();
+                    powerup.draw();
+                });
+                
+                checkCollisions();
             }
             
-            if (gameState.fireCollected < 3 && gameState.level <= 3 && 
-                gameState.gameTime > gameState.fireSpawnTimes[gameState.level - 1] &&
-                !gameState.powerups.some(p => p.type === 'fire')) {
-                gameState.powerups.push(new Powerup('fire'));
-                gameState.fireSpawnTimes[gameState.level - 1] = Infinity;
-            }
-            
-            spawnEnemy();
-            
-            gameState.player.update();
             gameState.player.draw();
-            
-            autoShoot();
-            
-            gameState.bullets.forEach(bullet => {
-                bullet.update();
-                bullet.draw();
-            });
-            
-            gameState.enemyBullets.forEach(bullet => {
-                bullet.update();
-                bullet.draw();
-            });
-            
-            gameState.enemies.forEach(enemy => {
-                enemy.update();
-                enemy.draw();
-            });
-            
-            gameState.powerups.forEach(powerup => {
-                powerup.update();
-                powerup.draw();
-            });
-            
-            checkCollisions();
             
             requestAnimationFrame(gameLoop);
         }
@@ -772,7 +853,6 @@
             gameState.keys[key] = false;
         });
 
-        // Contrôles tactiles
         const btnUp = document.getElementById('btnUp');
         const btnDown = document.getElementById('btnDown');
 
@@ -796,7 +876,6 @@
             gameState.keys['s'] = false;
         });
 
-        // Détection mobile pour afficher les contrôles
         if ('ontouchstart' in window || navigator.maxTouchPoints > 0) {
             document.getElementById('touchControls').style.display = 'flex';
         }
