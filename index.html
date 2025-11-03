@@ -24,6 +24,43 @@
             background: linear-gradient(to bottom, #000 0%, #001 50%, #002 100%);
             display: block;
             margin: 20px auto;
+            touch-action: none;
+        }
+        #touchControls {
+            display: none;
+            position: fixed;
+            bottom: 20px;
+            right: 20px;
+            z-index: 5;
+        }
+        .touchButton {
+            width: 80px;
+            height: 80px;
+            background: rgba(0, 255, 255, 0.3);
+            border: 2px solid #0ff;
+            border-radius: 50%;
+            margin: 10px;
+            font-size: 24px;
+            color: #0ff;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            user-select: none;
+            -webkit-user-select: none;
+            touch-action: none;
+        }
+        .touchButton:active {
+            background: rgba(0, 255, 255, 0.6);
+        }
+        @media (max-width: 768px) {
+            #touchControls {
+                display: flex;
+                flex-direction: column;
+            }
+            canvas {
+                width: 100%;
+                height: auto;
+            }
         }
         #ui {
             font-size: 18px;
@@ -127,6 +164,11 @@
             <span>Cadence: <span id="fireBonus">Normal</span></span>
         </div>
         <canvas id="gameCanvas" width="800" height="600"></canvas>
+        
+        <div id="touchControls">
+            <div class="touchButton" id="btnUp">▲</div>
+            <div class="touchButton" id="btnDown">▼</div>
+        </div>
     </div>
 
     <script>
@@ -729,6 +771,35 @@
             const key = e.key.toLowerCase();
             gameState.keys[key] = false;
         });
+
+        // Contrôles tactiles
+        const btnUp = document.getElementById('btnUp');
+        const btnDown = document.getElementById('btnDown');
+
+        btnUp.addEventListener('touchstart', (e) => {
+            e.preventDefault();
+            gameState.keys['z'] = true;
+        });
+
+        btnUp.addEventListener('touchend', (e) => {
+            e.preventDefault();
+            gameState.keys['z'] = false;
+        });
+
+        btnDown.addEventListener('touchstart', (e) => {
+            e.preventDefault();
+            gameState.keys['s'] = true;
+        });
+
+        btnDown.addEventListener('touchend', (e) => {
+            e.preventDefault();
+            gameState.keys['s'] = false;
+        });
+
+        // Détection mobile pour afficher les contrôles
+        if ('ontouchstart' in window || navigator.maxTouchPoints > 0) {
+            document.getElementById('touchControls').style.display = 'flex';
+        }
     </script>
 </body>
 </html>
